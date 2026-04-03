@@ -27,17 +27,17 @@ import { Transaction } from './types/Transaction.js'
 import { InstantLock } from './types/InstantLock.js'
 import { Output } from './types/Output.js'
 import type { ServerStreamingCall } from '@protobuf-ts/runtime-rpc'
-import {AssetLockTx} from "./types/ExtraPayload/AssetLockTx.js"
-import {AssetUnlockTx} from "./types/ExtraPayload/AssetUnlockTx.js"
-import {CbTx} from "./types/ExtraPayload/CbTx.js"
-import {MnHfTx} from "./types/ExtraPayload/MnHfTx.js"
-import {ProRegTX} from "./types/ExtraPayload/ProRegTX.js"
-import {ProUpRegTx} from "./types/ExtraPayload/ProUpRegTx.js"
-import {ProUpRevTx} from "./types/ExtraPayload/ProUpRevTx.js"
-import {ProUpServTx} from "./types/ExtraPayload/ProUpServTx.js"
-import {QcTx} from "./types/ExtraPayload/QcTx.js"
-import {MnHfSignal} from "./types/Messages/MnHfSignal.js"
-import {QfCommit} from "./types/Messages/QfCommit.js"
+import { AssetLockTx } from './types/ExtraPayload/AssetLockTx.js'
+import { AssetUnlockTx } from './types/ExtraPayload/AssetUnlockTx.js'
+import { CbTx } from './types/ExtraPayload/CbTx.js'
+import { MnHfTx } from './types/ExtraPayload/MnHfTx.js'
+import { ProRegTX } from './types/ExtraPayload/ProRegTX.js'
+import { ProUpRegTx } from './types/ExtraPayload/ProUpRegTx.js'
+import { ProUpRevTx } from './types/ExtraPayload/ProUpRevTx.js'
+import { ProUpServTx } from './types/ExtraPayload/ProUpServTx.js'
+import { QcTx } from './types/ExtraPayload/QcTx.js'
+import { MnHfSignal } from './types/Messages/MnHfSignal.js'
+import { QfCommit } from './types/Messages/QfCommit.js'
 
 interface DapiTransaction {
   transaction: Uint8Array
@@ -76,18 +76,18 @@ export interface CoreKeyPair {
   wif: string
 }
 
-export {BlockHeader} from "./types/BlockHeader.js"
-export {BloomFilterWriter} from "./types/BloomFilter.js"
-export {Input} from "./types/Input.js"
-export {InstantLock} from "./types/InstantLock.js"
-export {MerkleBlock} from "./types/MerkleBlock.js"
-export {MerkleTree} from "./types/MerkleTree.js"
-export {OutPoint} from "./types/OutPoint.js"
-export {Output} from "./types/Output.js"
-export {PrivateKey} from "./types/PrivateKey.js"
-export {PublicKey} from "./types/PublicKey.js"
-export {Script} from "./types/Script.js"
-export {Transaction} from "./types/Transaction.js"
+export { BlockHeader } from './types/BlockHeader.js'
+export { BloomFilterWriter } from './types/BloomFilter.js'
+export { Input } from './types/Input.js'
+export { InstantLock } from './types/InstantLock.js'
+export { MerkleBlock } from './types/MerkleBlock.js'
+export { MerkleTree } from './types/MerkleTree.js'
+export { OutPoint } from './types/OutPoint.js'
+export { Output } from './types/Output.js'
+export { PrivateKey } from './types/PrivateKey.js'
+export { PublicKey } from './types/PublicKey.js'
+export { Script } from './types/Script.js'
+export { Transaction } from './types/Transaction.js'
 
 const extraPayload = {
   AssetLockTx,
@@ -106,9 +106,8 @@ const messages = {
   QfCommit
 }
 
-export {messages as Messages}
-export {extraPayload as ExtraPayload}
-
+export { messages as Messages }
+export { extraPayload as ExtraPayload }
 
 export class DashCoreSDK {
   grpcConnectionPool: GRPCConnectionPool
@@ -342,69 +341,57 @@ export class DashCoreSDK {
     const sendTransactionHashes = false
 
     const fromBlockHeight = (await this.getBestBlockHeight()).height
+    const abortController = new AbortController()
+    const reconnectReason = 'DAPI_RECONNECT_STREAM'
 
-    while (true) {
-      const abortController = new AbortController()
-      let reconnectRequested = false
+    const iterator = this.subscribeToTransactionsWithProofs({ ...bf.toObject() }, count, sendTransactionHashes, undefined, fromBlockHeight, abortController)
 
-      const iterator = this.subscribeToTransactionsWithProofs({ ...bf.toObject() }, count, sendTransactionHashes, undefined, fromBlockHeight, abortController)
+    const reconnectTimeout = setTimeout(() => {
+      abortController.abort(reconnectReason)
+    }, DAPI_STREAM_RECONNECT_TIMEOUT)
 
-      const reconnectTimeout = setTimeout(() => {
-        reconnectRequested = true
-        abortController.abort()
-      }, DAPI_STREAM_RECONNECT_TIMEOUT)
+    try {
+      for await (const event of iterator.responses) {
+        const { responses } = event
 
-      let shouldReconnect = false
-
-      try {
-        for await (const event of iterator.responses) {
-          const { responses } = event
-
-          switch (responses.oneofKind) {
-            case 'rawMerkleBlock': {
-              yield ({
-                event: 'rawMerkleBlock',
-                data: bytesToHex(responses.rawMerkleBlock)
-              })
-              break
-            }
-            case 'rawTransactions': {
-              for (const transaction of responses.rawTransactions.transactions) {
-                yield ({
-                  event: 'rawTransaction',
-                  data: bytesToHex(transaction)
-                })
-              }
-              break
-            }
-            case 'instantSendLockMessages': {
-              for (const instantSendLockMessage of responses.instantSendLockMessages.messages) {
-                yield ({
-                  event: 'instantSendLockMessage',
-                  data: bytesToHex(instantSendLockMessage)
-                })
-              }
-              break
-            }
-            default:
-              break
+        switch (responses.oneofKind) {
+          case 'rawMerkleBlock': {
+            yield ({
+              event: 'rawMerkleBlock',
+              data: bytesToHex(responses.rawMerkleBlock)
+            })
+            break
           }
+          case 'rawTransactions': {
+            for (const transactionBytes of responses.rawTransactions.transactions) {
+              yield ({
+                event: 'rawTransaction',
+                data: bytesToHex(transactionBytes)
+              })
+            }
+            break
+          }
+          case 'instantSendLockMessages': {
+            for (const instantSendLockMessage of responses.instantSendLockMessages.messages) {
+              yield ({
+                event: 'instantSendLockMessage',
+                data: bytesToHex(instantSendLockMessage)
+              })
+            }
+            break
+          }
+          default:
+            break
         }
-
-        shouldReconnect = true
-      } catch (e) {
-        shouldReconnect = reconnectRequested
-
-        if (!shouldReconnect) {
-          throw e
-        }
-      } finally {
-        clearTimeout(reconnectTimeout)
+      }
+    } catch (e) {
+      if (e?.message === reconnectReason || abortController.signal.reason === reconnectReason) {
+        return yield * this.subscribeToTransactions(addresses)
       }
 
-      if (!shouldReconnect) {
-        return
-      }
+      throw e
+    } finally {
+      clearTimeout(reconnectTimeout)
     }
   }
 
